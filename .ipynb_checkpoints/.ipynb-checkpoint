@@ -1,0 +1,372 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Loading data by using pandas dataframe"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "%matplotlib notebook\n",
+    "import os\n",
+    "folder = os.getcwd()+'/'\n",
+    "folderData = 'datasets/'\n",
+    "fileDev = 'development.csv'\n",
+    "fileEval = 'evaluation.csv'\n",
+    "\n",
+    "import numpy as np\n",
+    "\n",
+    "import matplotlib.pyplot as plt\n",
+    "from nltk.corpus import stopwords as sw\n",
+    "from sklearn.feature_extraction.text import TfidfVectorizer\n",
+    "from sklearn.decomposition import TruncatedSVD\n",
+    "import matplotlib.pyplot as plt\n",
+    "from sklearn.model_selection import train_test_split,GridSearchCV\n",
+    "from sklearn.metrics import accuracy_score, precision_recall_fscore_support, confusion_matrix\n",
+    "from sklearn.ensemble import RandomForestClassifier\n",
+    "from sklearn.metrics import f1_score\n",
+    "from sklearn.preprocessing import normalize\n",
+    "\n",
+    "import pandas as pd\n",
+    "\n",
+    "reviews_dev_df = pd.read_csv(folder + folderData + fileDev)\n",
+    "reviews_eval_df = pd.read_csv(folder + folderData + fileEval)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# DATA EXPLORATION "
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Handling missing values"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "reviews_dev_df.dropna()\n",
+    "print(reviews_dev_df.shape)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Outliers Detection"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "from langdetect import detect\n",
+    "docs=[]\n",
+    "indices=[]\n",
+    "for ind,doc in enumerate(reviews_dev_df['text']):\n",
+    "    if detect(doc) != 'it':\n",
+    "        docs.append(doc)\n",
+    "        indices.append(ind)\n",
+    "        \n",
+    "for i,d in zip(indices,docs):\n",
+    "    print('Review:\\n',d,'\\nIndex:',i,'\\tClass:',reviews_dev_df.loc[i,'class'],'\\n\\n\\n')\n",
+    "    \n",
+    "reviews_dev_df.drop(index=indices)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Stastics about length of reviews"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import seaborn as sns\n",
+    "%matplotlib notebook\n",
+    "\n",
+    "reviews_dev_df['length']=reviews_dev_df['text'].apply( lambda x : len(x))\n",
+    "reviews_eval_df['length']=reviews_eval_df['text'].apply( lambda x : len(x))\n",
+    "\n",
+    "sns.distplot(reviews_dev_df[reviews_dev_df['class']=='pos']['length'],axlabel='Length of positive reviews')\n",
+    "sns.distplot(reviews_dev_df[reviews_dev_df['class']=='neg']['length'],axlabel='Length of negative reviews')\n",
+    "\n",
+    "print('Percentage of pos reviews :',reviews_dev_df[reviews_dev_df['class']=='pos'].shape[0]/reviews_dev_df.shape[0]*100)\n",
+    "print('Percentage of pos reviews :',reviews_dev_df[reviews_dev_df['class']=='neg'].shape[0]/reviews_dev_df.shape[0]*100,'\\n')\n",
+    "print('Length of pos reviews (mean) :',int(reviews_dev_df[reviews_dev_df['class']=='pos']['length'].mean()))\n",
+    "print('Length of neg reviews (mean) :',int(reviews_dev_df[reviews_dev_df['class']=='neg']['length'].mean()),'\\n')\n",
+    "print('Minimum length of pos reviews:',int(reviews_dev_df[reviews_dev_df['class']=='pos']['length'].min()))\n",
+    "print('Minimum length of neg reviews:',int(reviews_dev_df[reviews_dev_df['class']=='neg']['length'].min()),'\\n')\n",
+    "print('Length of pos reviews (median) :',int(reviews_dev_df[reviews_dev_df['class']=='pos']['length'].quantile(0.5)))\n",
+    "print('Length of neg reviews (median) :',int(reviews_dev_df[reviews_dev_df['class']=='neg']['length'].quantile(0.5)),'\\n')\n",
+    "print('Length of pos reviews (95% quantile) :',int(reviews_dev_df[reviews_dev_df['class']=='pos']['length'].quantile(0.95)))\n",
+    "print('Length of neg reviews (95% quantile) :',int(reviews_dev_df[reviews_dev_df['class']=='neg']['length'].quantile(0.95)),'\\n')\n",
+    "print('Length of pos reviews (5% quantile) :',int(reviews_dev_df[reviews_dev_df['class']=='pos']['length'].quantile(0.05)))\n",
+    "print('Length of neg reviews (5% quantile) :',int(reviews_dev_df[reviews_dev_df['class']=='neg']['length'].quantile(0.05)))\n",
+    "\n",
+    "\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# PREPROCESSING"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Tokenization"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import string\n",
+    "import re\n",
+    "from nltk.corpus import stopwords\n",
+    "italian_stopwords = stopwords.words('italian')\n",
+    "italian_stopwords.remove('non')\n",
+    "def listToString(lista):\n",
+    "    s = ''\n",
+    "    for word in lista:\n",
+    "        s += word + ' '\n",
+    "    \n",
+    "    return s\n",
+    "\n",
+    "def remove_punctuation(text):\n",
+    "    for p in (string.punctuation + \"'\" +\"\\n\"):\n",
+    "        text = text.replace(p,' ')\n",
+    "        \n",
+    "    \n",
+    "    return text\n",
+    "\n",
+    "def extract_tokens(text,italian_stopwords):\n",
+    "    clean_text=[]\n",
+    "    other_stopwords = italian_stopwords +\\\n",
+    "                    ['stare','trovare','volere','fare','stare','dire','potere'] +\\\n",
+    "                    ['stato','stati','stata','dato','fatto','chiesto','visto','trovato','detto'] +\\\n",
+    "                    ['colazione','camera','camere','hotel', 'albergo','stanza','struttura','reception'] +\\\n",
+    "                    ['per','su','tra','fra','quando','quindi','così'] +\\\n",
+    "                    ['venezia','milano','napoli'] +\\\n",
+    "                    ['gennaio','febbraio','marzo','aprile','maggio','giugno','luglio','agosto','settembre','ottobre','novembre','dicembre'] +\\\n",
+    "                    ['lunedì','martedì','mercoledì','giovedì','venerdì','sabato','domenica']\n",
+    "    for w in text.split(' '):\n",
+    "        if ( len(w)<=2 )  or (bool(re.search(r'\\d', w)) == True) :\n",
+    "            continue\n",
+    "        w=w.lower()\n",
+    "        if w not in other_stopwords:\n",
+    "            clean_text.append(w)\n",
+    "    return listToString(clean_text)\n",
+    "\n",
+    "def tokenize(text,stopwords):\n",
+    "    text=remove_punctuation(text)\n",
+    "    tokens = extract_tokens(text,stopwords)\n",
+    "    return tokens\n",
+    "    \n",
+    "reviews_dev_df['tokens'] = reviews_dev_df['text'].apply(lambda doc : tokenize(doc,italian_stopwords))\n",
+    "reviews_eval_df['tokens'] = reviews_eval_df['text'].apply(lambda doc : tokenize(doc,italian_stopwords))\n",
+    "reviews_dev_df['num_of_words']=reviews_dev_df['tokens'].apply( lambda x : len(x.split(' ')))\n",
+    "reviews_eval_df['num_of_words']=reviews_eval_df['tokens'].apply( lambda x : len(x.split(' ')))\n",
+    "\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Stemming"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "from nltk.stem.snowball import SnowballStemmer\n",
+    "stemmer = SnowballStemmer('italian')\n",
+    "\n",
+    "def stem(tokens):\n",
+    "    stemmed_tokens=[]\n",
+    "    for x in tokens.split(' '):\n",
+    "        stemmed_tokens.append(stemmer.stem(x))\n",
+    "    \n",
+    "    return listToString(stemmed_tokens)\n",
+    "        \n",
+    "    \n",
+    "reviews_dev_df['stemmed_tokens'] = reviews_dev_df['tokens'].apply(lambda token : stem(token) )\n",
+    "reviews_eval_df['stemmed_tokens'] = reviews_eval_df['tokens'].apply(lambda token : stem(token))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# TF-IDF"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "reviews_vectorizer = TfidfVectorizer(min_df = 5,ngram_range=(1,2),norm='l2')\n",
+    "reviews_vectorizer.fit(reviews_dev_df['stemmed_tokens'],list(reviews_dev_df['class']))\n",
+    "tfidf_reviews_dev = reviews_vectorizer.transform(reviews_dev_df['stemmed_tokens'])\n",
+    "tfidf_reviews_eval =reviews_vectorizer.transform(reviews_eval_df['stemmed_tokens'])"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Tomek-links"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "from imblearn.under_sampling import TomekLinks,AllKNN\n",
+    "\n",
+    "tm = TomekLinks(sampling_strategy='all')\n",
+    "tfidf_reviews_dev_us,labels_us = tm.fit_resample(tfidf_reviews_dev,reviews_dev_df['class'])"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Linear SVC ( computed on TF-IDF )"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "from sklearn.svm import LinearSVC\n",
+    "from sklearn.metrics import classification_report\n",
+    "def gridSearchCV_SVC_US(Reviews_train,reviews_labels):\n",
+    "    classifier = LinearSVC(fit_intercept=True,loss='squared_hinge',tol=1e-6,class_weight='balanced')\n",
+    "    param_grid = { \n",
+    "                  'C' :[1.0,2.0,3.0]\n",
+    "                   }\n",
+    "    \n",
+    "    gridsearch = GridSearchCV(classifier, param_grid, scoring='f1_weighted', cv=10)\n",
+    "    gridsearch.fit(Reviews_train,reviews_labels)\n",
+    "    return gridsearch\n",
+    "    \n",
+    "Reviews_train,Reviews_test,reviews_labels,test_labels= train_test_split(tfidf_reviews_dev_us,labels_us,train_size=0.85,stratify=labels_us,shuffle=True)\n",
+    "gridsearchCV_SVC_US_=gridSearchCV_SVC_US(Reviews_train,reviews_labels)\n",
+    "\n",
+    "y_pred=gridsearchCV_SVC_US_.best_estimator_.predict(Reviews_test)\n",
+    "print(gridsearchCV_SVC_US_.best_estimator_)\n",
+    "print(gridsearchCV_SVC_US_.best_score_)\n",
+    "print(classification_report(y_pred,test_labels))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Validation"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "best_estimator = gridsearchCV_SVC_US_.best_estimator_\n",
+    "y_pred=best_estimator.predict(tfidf_reviews_eval)\n",
+    "print(np.unique(y_pred,return_counts=True))\n",
+    "\n",
+    "with open(folder + 'res.csv', 'w') as file:\n",
+    "    file.write('Id,Predicted\\n')\n",
+    "    for i,l in enumerate(y_pred):\n",
+    "        file.write(str(i) + ',' + l +'\\n')\n",
+    "    file.close()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "model = best_estimator\n",
+    "feature_to_coef = {\n",
+    "    word: coef for word, coef in zip(\n",
+    "        reviews_vectorizer.get_feature_names(), model.coef_[0]\n",
+    "    )\n",
+    "}\n",
+    "\n",
+    "\n",
+    "\n",
+    "feature_sorted =  sorted(feature_to_coef.items(), key=lambda x: x[1], reverse=True)\n",
+    "\n",
+    "print('Positive features:', end = \"\\n\\n\")\n",
+    "for best_positive in feature_sorted[0:10]:\n",
+    "    print (best_positive)\n",
+    "print('')\n",
+    "print('Negative features:', end = \"\\n\\n\")\n",
+    "for best_negative in sorted(feature_sorted[-10:]):\n",
+    "    print (best_negative)"
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.7.4"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 2
+}
